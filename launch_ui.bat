@@ -7,7 +7,7 @@ echo ==============================================
 call "%UserProfile%\Miniconda3\Scripts\activate.bat"
 call conda activate main_env
 
-cd LivePortrait_Face_Reenactment
+cd LivePortrait
 call streamlit run gui_final.py
 
 pause

@@ -1,15 +1,18 @@
 @echo off
 setlocal EnableDelayedExpansion
 
+REM Force the working directory to this bat's own folder.
+cd /d "%~dp0"
+
 echo ===================================================
 echo   MASTER SETUP  (Speech Therapy - LivePortrait Studio)
 echo   - clones LivePortrait + Seed-VC
-echo   - injects gui_final.py + evaluation_pipeline.py
+echo   - injects gui_final.py + replaces LivePortrait\src
 echo   - copies requirements.txt into the LivePortrait repo
 echo   - sets up main_env / seed-vc / whisper conda envs
 echo   - downloads all pretrained weights
 echo ===================================================
-echo.
+echo Working directory: %CD%
 
 REM ============================================================
 REM Pre-flight 1: Git for Windows
@@ -28,8 +31,10 @@ if %ERRORLEVEL% NEQ 0 (
     set "PATH=%PATH%;C:\Program Files\Git\cmd;C:\Program Files\Git\bin"
     where git >nul 2>&1
     if !ERRORLEVEL! NEQ 0 (
-        echo [ERROR] Git installation failed. Install manually from https://git-scm.com and rerun.
-        pause
+        echo [ERROR] Git installation failed.
+        echo         Install manually from https://git-scm.com and rerun.
+        echo Press any key to close this window...
+        pause >nul
         exit /b 1
     )
 )
@@ -48,8 +53,10 @@ if %ERRORLEVEL% NEQ 0 (
     set "PATH=%PATH%;%UserProfile%\Miniconda3;%UserProfile%\Miniconda3\Scripts;%UserProfile%\Miniconda3\Library\bin"
     where conda >nul 2>&1
     if !ERRORLEVEL! NEQ 0 (
-        echo [ERROR] Conda installation failed. Install Miniconda manually and rerun.
-        pause
+        echo [ERROR] Conda installation failed.
+        echo         Install Miniconda manually and rerun.
+        echo Press any key to close this window...
+        pause >nul
         exit /b 1
     )
 )
@@ -60,36 +67,49 @@ conda --version
 
 echo.
 echo ===================================================
-echo   [Step 0] Pre-flight: required template files
+echo   [Step 0] Pre-flight: required templates
 echo ===================================================
-REM Verify the three template files exist in the main folder
 set "MISSING=0"
-if not exist "gui_final.py"           ( echo [MISSING] gui_final.py           & set "MISSING=1" )
-if not exist "evaluation_pipeline.py" ( echo [MISSING] evaluation_pipeline.py & set "MISSING=1" )
-if not exist "requirements.txt"       ( echo [MISSING] requirements.txt       & set "MISSING=1" )
+if not exist "gui_final.py"     ( echo [MISSING] gui_final.py     ^(file^)   & set "MISSING=1" )
+if not exist "requirements.txt" ( echo [MISSING] requirements.txt ^(file^)   & set "MISSING=1" )
+if not exist "src\nul"          ( echo [MISSING] src              ^(folder^) & set "MISSING=1" )
 if "!MISSING!"=="1" (
     echo.
-    echo [ERROR] One or more template files missing from the main folder.
-    echo         Place them next to this bat and rerun.
-    pause
+    echo ===================================================
+    echo   [ERROR] One or more template items missing.
+    echo ===================================================
+    echo Contents of this folder:
+    echo ---------------------------------------------------
+    dir /B
+    echo ---------------------------------------------------
+    echo Make sure these three items are present in:
+    echo   %CD%
+    echo Required:
+    echo   gui_final.py        ^(file^)
+    echo   requirements.txt    ^(file^)
+    echo   src\                ^(folder, will replace LivePortrait\src^)
+    echo Common cause: Windows hides extensions, so a file that
+    echo looks like "gui_final.py" may actually be "gui_final.py.txt".
+    echo Press any key to close this window...
+    pause >nul
     exit /b 1
 )
-echo [OK] All three template files present.
+echo [OK] All three templates present.
 
 
 echo.
 echo ===================================================
 echo   [Step 1] Cloning repositories
 echo ===================================================
-
 if not exist "LivePortrait" (
     echo Cloning LivePortrait...
     git clone https://github.com/KlingAIResearch/LivePortrait.git LivePortrait
     if !ERRORLEVEL! NEQ 0 (
         echo [ERROR] LivePortrait clone failed.
-        echo         If the URL is wrong, edit this bat to point at the right fork
-        echo         (e.g. https://github.com/KwaiVGI/LivePortrait.git).
-        pause
+        echo         If the URL is wrong, edit this bat to point at the right fork:
+        echo           https://github.com/KwaiVGI/LivePortrait.git
+        echo Press any key to close this window...
+        pause >nul
         exit /b 1
     )
 ) else (
@@ -101,7 +121,8 @@ if not exist "Voice-Transformation" (
     git clone https://github.com/Plachtaa/seed-vc.git Voice-Transformation
     if !ERRORLEVEL! NEQ 0 (
         echo [ERROR] seed-vc clone failed. Check your network.
-        pause
+        echo Press any key to close this window...
+        pause >nul
         exit /b 1
     )
 ) else (
@@ -111,21 +132,31 @@ if not exist "Voice-Transformation" (
 
 echo.
 echo ===================================================
-echo   [Step 2] Injecting template files into LivePortrait
+echo   [Step 2] Injecting templates into LivePortrait
 echo ===================================================
 
 REM ---- gui_final.py at repo root ----
 copy /Y "gui_final.py" "LivePortrait\gui_final.py" >nul
-echo [OK] gui_final.py        -^> LivePortrait\
+echo [OK] gui_final.py     -^> LivePortrait\
 
-REM ---- evaluation_pipeline.py inside src/ ----
-if not exist "LivePortrait\src" mkdir "LivePortrait\src"
-copy /Y "evaluation_pipeline.py" "LivePortrait\src\evaluation_pipeline.py" >nul
-echo [OK] evaluation_pipeline -^> LivePortrait\src\
+REM ---- Replace LivePortrait\src wholesale ----
+REM rmdir first so the replacement is a clean swap, not a merge.
+if exist "LivePortrait\src" (
+    rmdir /S /Q "LivePortrait\src"
+    if exist "LivePortrait\src" (
+        echo [ERROR] Could not remove LivePortrait\src.
+        echo         Close any editors / Python processes holding files there and rerun.
+        echo Press any key to close this window...
+        pause >nul
+        exit /b 1
+    )
+)
+xcopy /E /I /Y "src" "LivePortrait\src" >nul
+echo [OK] src\             -^> LivePortrait\src\  ^(folder replaced^)
 
 REM ---- requirements.txt overwrite ----
 copy /Y "requirements.txt" "LivePortrait\requirements.txt" >nul
-echo [OK] requirements.txt    -^> LivePortrait\  (overwrote repo default)
+echo [OK] requirements.txt -^> LivePortrait\  ^(overwrote repo default^)
 
 REM ---- Working folders inside LivePortrait ----
 if not exist "LivePortrait\temp_uploads"   mkdir "LivePortrait\temp_uploads"
@@ -145,17 +176,7 @@ call conda remove -y -n main_env --all >nul 2>&1
 call conda create -y -n main_env python=3.10
 call conda activate main_env
 
-REM -------------------------------------------------------------------
-REM Static ffmpeg (NOT conda-forge ffmpeg)
-REM We avoid `conda install -c conda-forge ffmpeg` because recent builds
-REM pull in gdk-pixbuf / glib / gettext, which causes the
-REM "libintl_bind_textdomain_codeset" DLL error on fresh Windows installs.
-REM
-REM imageio-ffmpeg ships a statically-linked ffmpeg.exe with no external
-REM DLL dependencies. It's also in requirements.txt, so it gets installed
-REM there too - this just makes the static binary callable as `ffmpeg`
-REM from PATH for subprocess.run([...]) calls in gui_final.py.
-REM -------------------------------------------------------------------
+REM ---- Static ffmpeg (NOT conda-forge ffmpeg) - avoids gdk-pixbuf DLL issue
 python -m pip install --upgrade pip setuptools wheel
 pip install imageio-ffmpeg==0.5.1
 for /f "delims=" %%i in ('python -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())"') do set "FFMPEG_EXE=%%i"
@@ -164,7 +185,8 @@ copy /Y "!FFMPEG_EXE!" "%CONDA_PREFIX%\Scripts\ffmpeg.exe" >nul
 ffmpeg -version 2>nul | findstr /B "ffmpeg version"
 if !ERRORLEVEL! NEQ 0 (
     echo [ERROR] ffmpeg not callable after copy. Aborting.
-    pause
+    echo Press any key to close this window...
+    pause >nul
     exit /b 1
 )
 
@@ -178,36 +200,38 @@ REM ---- Repo requirements (CWD is LivePortrait\ at this point) ----
 pip install --no-cache-dir -r requirements.txt
 
 REM ---- Webcam recording deps (NOT in requirements.txt) ----
-REM streamlit-webrtc + aiortc + av: video/audio capture from browser
-REM mediapipe: face landmark detection for the alignment overlay (FaceGuideProcessor)
 pip install streamlit-webrtc==0.47.7 aiortc==1.9.0
 pip install av==11.0.0 --only-binary=:all:
 pip install mediapipe==0.10.14
 
 REM ---- Evaluation extras (NOT in requirements.txt) ----
-REM librosa + soundfile: audio loading + RMS guardrail + acoustic dialogue score
-REM huggingface-hub: weight downloads (LivePortrait + ContentVec)
 pip install librosa==0.10.2 soundfile==0.12.1
 pip install huggingface-hub>=0.28.1
 
-REM ---- Lock numpy again (some deps may have bumped it) ----
+REM ---- Lock numpy again ----
 pip install --no-deps numpy==1.26.4
 
 REM ---- Sanity check: env should not contain gdk-pixbuf/poppler ----
-echo.
-echo Verifying env is clean of problem DLLs...
 call conda list | findstr /I "gdk-pixbuf poppler" >nul
 if !ERRORLEVEL! EQU 0 (
     echo [WARN] gdk-pixbuf or poppler detected. Removing...
     call conda remove -y --force gdk-pixbuf poppler 2>nul
 ) else (
-    echo [OK]   No gdk-pixbuf/poppler in main_env.
+    echo [OK] No gdk-pixbuf/poppler in main_env.
 )
 
-REM ---- Download LivePortrait pretrained weights from HuggingFace ----
-if not exist "pretrained_weights\liveportrait\base_models\appearance_feature_extractor.pth" (
-    echo.
-    echo Downloading LivePortrait pretrained weights from HuggingFace...
+REM ---- Download LivePortrait weights (check ALL critical files) ----
+set "WEIGHTS_OK=1"
+if not exist "pretrained_weights\liveportrait\base_models\appearance_feature_extractor.pth"        set "WEIGHTS_OK=0"
+if not exist "pretrained_weights\liveportrait\base_models\motion_extractor.pth"                    set "WEIGHTS_OK=0"
+if not exist "pretrained_weights\liveportrait\base_models\spade_generator.pth"                     set "WEIGHTS_OK=0"
+if not exist "pretrained_weights\liveportrait\base_models\warping_module.pth"                      set "WEIGHTS_OK=0"
+if not exist "pretrained_weights\liveportrait\retargeting_models\stitching_retargeting_module.pth" set "WEIGHTS_OK=0"
+if not exist "pretrained_weights\liveportrait\landmark.onnx"                                       set "WEIGHTS_OK=0"
+if not exist "pretrained_weights\insightface\models\buffalo_l\det_10g.onnx"                        set "WEIGHTS_OK=0"
+
+if "!WEIGHTS_OK!"=="0" (
+    echo Some LivePortrait weights are missing - downloading from HuggingFace...
     echo This is ~500 MB and may take several minutes.
     echo try: > _dl_weights.py
     echo     from huggingface_hub import snapshot_download >> _dl_weights.py
@@ -222,11 +246,10 @@ if not exist "pretrained_weights\liveportrait\base_models\appearance_feature_ext
     python _dl_weights.py
     del _dl_weights.py
 ) else (
-    echo [OK] LivePortrait weights already present.
+    echo [OK] All LivePortrait weights already present, skipping download.
 )
 
 REM ---- Pre-warm: silero-vad + ContentVec ----
-echo.
 echo Pre-downloading silero-vad and ContentVec-768...
 echo try: > _warmup.py
 echo     import torch >> _warmup.py
@@ -254,21 +277,38 @@ call conda remove -y -n seed-vc --all >nul 2>&1
 call conda create -y -n seed-vc python=3.10
 call conda activate seed-vc
 
-REM ---- Static ffmpeg (same fix as Part 1) ----
+REM ---- Static ffmpeg ----
 python -m pip install --upgrade pip setuptools wheel
 pip install imageio-ffmpeg
 for /f "delims=" %%i in ('python -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())"') do set "FFMPEG_EXE=%%i"
 copy /Y "!FFMPEG_EXE!" "%CONDA_PREFIX%\Scripts\ffmpeg.exe" >nul
 
 pip install numpy==1.26.4
-
 echo Installing PyTorch (CUDA 12.4)...
 pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cu124
 
-pip install accelerate scipy==1.13.1 librosa==0.10.2 huggingface-hub>=0.28.1 munch==4.0.0 einops==0.8.0 descript-audio-codec==1.0.0 pydub==0.25.1 resemblyzer jiwer==3.0.3 transformers==4.46.3 FreeSimpleGUI==5.1.1 soundfile==0.12.1 sounddevice==0.5.0 modelscope==1.18.1 funasr==1.1.5 hydra-core==1.3.2 pyyaml python-dotenv
+REM -------------------------------------------------------------------
+REM CRITICAL: pre-install webrtcvad-wheels BEFORE any package that needs it.
+REM funasr requires webrtcvad, which has no Windows wheel on PyPI and would
+REM otherwise try to compile from source - failing without MSVC C++ Build Tools.
+REM webrtcvad-wheels provides the same `webrtcvad` Python module via a prebuilt wheel.
+REM -------------------------------------------------------------------
+pip install webrtcvad-wheels
+
+REM ---- Regular deps (everything except funasr; explicit `requests` for safety) ----
+pip install accelerate scipy==1.13.1 librosa==0.10.2 huggingface-hub>=0.28.1 munch==4.0.0 einops==0.8.0 descript-audio-codec==1.0.0 pydub==0.25.1 resemblyzer jiwer==3.0.3 transformers==4.46.3 FreeSimpleGUI==5.1.1 soundfile==0.12.1 sounddevice==0.5.0 modelscope==1.18.1 hydra-core==1.3.2 pyyaml python-dotenv requests
+
+REM ---- funasr with --no-deps (so pip doesn't try to pull source webrtcvad) ----
+pip install funasr==1.1.5 --no-deps
+
+REM ---- funasr's other runtime deps (not auto-installed due to --no-deps) ----
+pip install jieba pypinyin sentencepiece jaconv editdistance tensorboardX kaldiio
 
 pip install onnxruntime-gpu==1.18.1
 
+REM gradio is needed because seed-vc's app.py imports it at module level,
+REM and gui_final.py does `import app` to call app.convert_voice_v2_wrapper.
+REM We don't use any gradio UI features, but the import must succeed.
 pip install gradio==5.23.0
 
 pip install --no-deps numpy==1.26.4
@@ -279,7 +319,14 @@ if !ERRORLEVEL! EQU 0 (
     echo [WARN] gdk-pixbuf or poppler in seed-vc. Removing...
     call conda remove -y --force gdk-pixbuf poppler 2>nul
 ) else (
-    echo [OK]   No gdk-pixbuf/poppler in seed-vc.
+    echo [OK] No gdk-pixbuf/poppler in seed-vc.
+)
+
+REM ---- Verify the critical imports actually work ----
+echo Verifying seed-vc env imports...
+python -c "import gradio, webrtcvad, funasr, requests; print('[OK] gradio, webrtcvad, funasr, requests all importable')"
+if !ERRORLEVEL! NEQ 0 (
+    echo [WARN] One or more seed-vc imports failed. Seed-VC may still partially work.
 )
 
 REM ---- Predefined voices folder ----
@@ -288,7 +335,6 @@ if not exist "predefined_voices" (
     echo Place these 6 reference voice WAV files here:                        > predefined_voices\README.txt
     echo   male_high.wav   male_medium.wav   male_low.wav                    >> predefined_voices\README.txt
     echo   female_high.wav female_medium.wav female_low.wav                  >> predefined_voices\README.txt
-    echo.                                                                     >> predefined_voices\README.txt
     echo These are used by Seed-VC when the user selects "Predefined Voice    >> predefined_voices\README.txt
     echo Samples" in the Streamlit UI.  Each should be 5-10 seconds of clear  >> predefined_voices\README.txt
     echo speech, mono, 16 kHz or higher.                                      >> predefined_voices\README.txt
@@ -299,7 +345,6 @@ echo.
 echo ===================================================
 echo   [Part 3/4] Downloading Seed-VC V2 models
 echo ===================================================
-
 echo import sys > predownload.py
 echo from argparse import Namespace >> predownload.py
 echo import app >> predownload.py
@@ -319,7 +364,6 @@ echo.
 echo ===================================================
 echo   [Part 4/4] Whisper env (whisper)
 echo ===================================================
-
 call conda remove -y -n whisper --all >nul 2>&1
 call conda create -y -n whisper python=3.10
 call conda activate whisper
@@ -331,12 +375,8 @@ for /f "delims=" %%i in ('python -c "import imageio_ffmpeg; print(imageio_ffmpeg
 copy /Y "!FFMPEG_EXE!" "%CONDA_PREFIX%\Scripts\ffmpeg.exe" >nul
 
 pip install numpy==1.26.4
-
-REM ---- PyTorch (matches main_env CUDA 12.1 for driver consistency) ----
 pip install --no-cache-dir torch==2.2.2 torchvision==0.17.2 torchaudio==2.2.2 --index-url https://download.pytorch.org/whl/cu121
-
 pip install openai-whisper
-
 pip install --no-deps numpy==1.26.4
 
 REM ---- Sanity check ----
@@ -345,7 +385,7 @@ if !ERRORLEVEL! EQU 0 (
     echo [WARN] gdk-pixbuf or poppler in whisper. Removing...
     call conda remove -y --force gdk-pixbuf poppler 2>nul
 ) else (
-    echo [OK]   No gdk-pixbuf/poppler in whisper.
+    echo [OK] No gdk-pixbuf/poppler in whisper.
 )
 
 REM ---- Pre-download Whisper "base" model ----
@@ -364,35 +404,10 @@ echo.
 echo ===================================================
 echo   SETUP COMPLETE
 echo ===================================================
-echo.
-echo   Main folder layout (after setup):
-echo     final_setup.bat
-echo     gui_final.py            (template kept in main folder)
-echo     evaluation_pipeline.py  (template kept in main folder)
-echo     requirements.txt        (template kept in main folder)
-echo     LivePortrait\           (cloned + customised)
-echo       gui_final.py            ^<- copied from template
-echo       requirements.txt        ^<- copied from template
-echo       src\evaluation_pipeline.py  ^<- copied from template
-echo       pretrained_weights\     ^<- downloaded from HuggingFace
-echo       temp_uploads\, temp_patients\, animations\, outputs\
-echo     Voice-Transformation\   (cloned seed-vc)
-echo       predefined_voices\
-echo.
 echo   Conda envs created:
 echo     - main_env    LivePortrait + Streamlit UI + evaluation
 echo     - seed-vc     Voice transformation (subprocess from UI)
 echo     - whisper     Transcript dialogue score (subprocess from UI)
-echo.
-echo   ffmpeg.exe in each env: static binary from imageio-ffmpeg
-echo   (no glib / gdk-pixbuf / libintl dependencies)
-echo.
-echo   Models downloaded:
-echo     - LivePortrait weights  (LivePortrait\pretrained_weights\)
-echo     - silero-vad            (~/.cache/torch/hub/)
-echo     - ContentVec-768        (~/.cache/huggingface/)
-echo     - Seed-VC V2 models     (seed-vc env caches)
-echo     - Whisper base          (~/.cache/whisper/)
 echo.
 echo   MANUAL STEP - place 6 reference voice WAVs in:
 echo     Voice-Transformation\predefined_voices\
@@ -405,4 +420,5 @@ echo     call conda activate main_env
 echo     cd LivePortrait
 echo     streamlit run gui_final.py
 echo ===================================================
-pause
+echo Press any key to close this window...
+pause >nul
