@@ -63,7 +63,8 @@ REM ---- PyTorch (CUDA 12.1) ----
 pip install --no-cache-dir torch==2.2.2 torchvision==0.17.2 torchaudio==2.2.2 --index-url https://download.pytorch.org/whl/cu121
 
 REM ---- Repo requirements ----
-pip install --no-cache-dir -r requirements.txt
+cd 
+pip install --no-cache-dir -r LivePortrait/requirements.txt
 
 REM ---- Stable CV + ML stack ----
 pip install opencv-contrib-python==4.9.0.80 mediapipe==0.10.14
