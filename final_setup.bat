@@ -32,7 +32,11 @@ call conda create -y -n main_env python=3.10
 call conda activate main_env
 
 REM ---- System deps ----
-call conda install -y -c conda-forge ffmpeg glib libiconv vc zlib poppler
+REM Only ffmpeg is genuinely needed via conda (used by subprocess calls
+REM for audio extraction, A/V merging, browser-safe re-encoding).
+REM Previously installed glib/libiconv/vc/zlib/poppler caused a known
+REM DLL conflict (gdk_pixbuf <-> libintl) on fresh Windows installs.
+call conda install -y -c conda-forge ffmpeg
 
 REM ---- Upgrade pip tools ----
 python -m pip install --upgrade pip setuptools wheel
@@ -56,7 +60,7 @@ pip install av==11.0.0 --only-binary=:all:
 REM ---- UI deps ----
 pip install gradio==4.44.1 streamlit==1.35.0 streamlit-webrtc==0.47.7 aiortc==1.9.0 streamlit-cropper==0.2.2
 
-REM ---- NEW: Evaluation pipeline deps ----
+REM ---- Evaluation pipeline deps ----
 REM   librosa         - audio loading for VAD + acoustic dialogue score
 REM   fastdtw         - DTW alignment (articulation AND acoustic dialogue)
 REM   scipy           - cosine distance metric used by FastDTW
@@ -87,7 +91,6 @@ if not exist "pretrained_weights\insightface" (
 )
 
 REM ---- Pre-warm: silero-vad + ContentVec ----
-REM Download these now so the first evaluation in the UI doesn't hang.
 echo Pre-downloading silero-vad and ContentVec-768...
 echo try: > _warmup.py
 echo     import torch >> _warmup.py
@@ -111,36 +114,28 @@ echo   [Part 2/4] Seed-VC env (seed-vc)
 echo ===================================================
 cd Voice-Transformation
 
-REM ---- Clean recreate env ----
 call conda remove -y -n seed-vc --all >nul 2>&1
 call conda create -y -n seed-vc python=3.10
 call conda activate seed-vc
 
+REM Minimal conda installs (same fix as Part 1)
 call conda install -y -c conda-forge ffmpeg
 
 python -m pip install --upgrade pip setuptools wheel
 
-REM ---- Pin numpy ----
 pip install numpy==1.26.4
 
 echo Installing PyTorch (CUDA 12.4)...
 pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cu124
 
-REM ---- Core dependencies ----
 pip install accelerate scipy==1.13.1 librosa==0.10.2 huggingface-hub>=0.28.1 munch==4.0.0 einops==0.8.0 descript-audio-codec==1.0.0 pydub==0.25.1 resemblyzer jiwer==3.0.3 transformers==4.46.3 FreeSimpleGUI==5.1.1 soundfile==0.12.1 sounddevice==0.5.0 modelscope==1.18.1 funasr==1.1.5 hydra-core==1.3.2 pyyaml python-dotenv
 
-REM ---- ONNX runtime ----
 pip install onnxruntime-gpu==1.18.1
 
-REM ---- Optional UI (only for standalone Seed-VC demo) ----
 pip install gradio==5.23.0
 
-REM ---- Lock numpy ----
 pip install --no-deps numpy==1.26.4
 
-REM ---- Predefined voices folder ----
-REM gui_final.py references 6 WAV files for the voice gallery.
-REM This folder is created empty; the user supplies the WAVs.
 if not exist "predefined_voices" (
     mkdir predefined_voices
     echo Place these 6 reference voice WAV files here:                        > predefined_voices\README.txt
@@ -180,7 +175,6 @@ echo   [Part 4/4] Whisper env (whisper)
 echo   Transcript-based dialogue accuracy score
 echo ===================================================
 
-REM ---- Clean recreate env ----
 call conda remove -y -n whisper --all >nul 2>&1
 call conda create -y -n whisper python=3.10
 call conda activate whisper
@@ -189,20 +183,14 @@ call conda install -y -c conda-forge ffmpeg
 
 python -m pip install --upgrade pip setuptools wheel
 
-REM ---- Pin numpy ----
 pip install numpy==1.26.4
 
-REM ---- PyTorch (matches main_env's CUDA 12.1 for driver consistency) ----
 pip install --no-cache-dir torch==2.2.2 torchvision==0.17.2 torchaudio==2.2.2 --index-url https://download.pytorch.org/whl/cu121
 
-REM ---- OpenAI Whisper (pulls in tiktoken, numba, etc.) ----
 pip install openai-whisper
 
-REM ---- Lock numpy ----
 pip install --no-deps numpy==1.26.4
 
-REM ---- Pre-download Whisper "base" model ----
-REM The model file is fetched from openaipublic.azureedge.net to %UserProfile%\.cache\whisper\
 echo Pre-downloading Whisper "base" model...
 echo try: > _warmup_whisper.py
 echo     import whisper >> _warmup_whisper.py
@@ -231,7 +219,7 @@ echo     - Seed-VC V2 models    (seed-vc)
 echo     - Whisper base         (whisper, ~142 MB)
 echo     - LivePortrait weights (main_env, pretrained_weights/)
 echo.
-echo   MANUAL STEP — place 6 reference voice WAVs in:
+echo   MANUAL STEP - place 6 reference voice WAVs in:
 echo     Voice-Transformation\predefined_voices\
 echo     Filenames:
 echo       male_high.wav   male_medium.wav   male_low.wav
