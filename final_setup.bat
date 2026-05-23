@@ -26,20 +26,35 @@ echo   [Part 1/4] LivePortrait env (main_env)
 echo ===================================================
 cd LivePortrait_Face_Reenactment
 
-REM ---- Clean recreate env (safe) ----
 call conda remove -y -n main_env --all >nul 2>&1
 call conda create -y -n main_env python=3.10
 call conda activate main_env
 
-REM ---- System deps ----
-REM Only ffmpeg is genuinely needed via conda (used by subprocess calls
-REM for audio extraction, A/V merging, browser-safe re-encoding).
-REM Previously installed glib/libiconv/vc/zlib/poppler caused a known
-REM DLL conflict (gdk_pixbuf <-> libintl) on fresh Windows installs.
-call conda install -y -c conda-forge ffmpeg
-
-REM ---- Upgrade pip tools ----
+REM -------------------------------------------------------------------
+REM Static ffmpeg via pip (imageio-ffmpeg)
+REM
+REM We deliberately do NOT use `conda install -c conda-forge ffmpeg`.
+REM Recent conda-forge ffmpeg builds pull in gdk-pixbuf / glib / gettext
+REM as transitive deps (libplacebo support), and those produce the
+REM "libintl_bind_textdomain_codeset could not be located" DLL error
+REM on fresh Windows installs.
+REM
+REM imageio-ffmpeg ships a single statically-linked ffmpeg.exe with no
+REM external DLL dependencies. We copy it into the env's Scripts folder
+REM so that subprocess.run(["ffmpeg", ...]) calls in gui_final.py find
+REM it on the activated env's PATH.
+REM -------------------------------------------------------------------
+echo Installing static ffmpeg (imageio-ffmpeg)...
 python -m pip install --upgrade pip setuptools wheel
+pip install imageio-ffmpeg
+for /f "delims=" %%i in ('python -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())"') do set "FFMPEG_EXE=%%i"
+echo   Static ffmpeg at: !FFMPEG_EXE!
+copy /Y "!FFMPEG_EXE!" "%CONDA_PREFIX%\Scripts\ffmpeg.exe" >nul
+ffmpeg -version 2>nul | findstr /B "ffmpeg version"
+if %ERRORLEVEL% NEQ 0 (
+    echo [ERROR] ffmpeg not callable from env. Aborting Part 1.
+    goto :eof
+)
 
 REM ---- CRITICAL: Pin numpy first ----
 pip install numpy==1.26.4
@@ -54,7 +69,7 @@ REM ---- Stable CV + ML stack ----
 pip install opencv-contrib-python==4.9.0.80 mediapipe==0.10.14
 pip install onnxruntime-gpu==1.18.1
 
-REM ---- FIX: Install AV (prebuilt only, no compile) ----
+REM ---- AV (PyAV) — wheel only, no compile ----
 pip install av==11.0.0 --only-binary=:all:
 
 REM ---- UI deps ----
@@ -72,8 +87,20 @@ pip install librosa==0.10.2 fastdtw==0.3.4 scipy==1.13.1
 pip install transformers==4.46.3 huggingface-hub>=0.28.1
 pip install soundfile==0.12.1
 
-REM ---- Lock numpy again (some deps may have bumped it) ----
+REM ---- Lock numpy again ----
 pip install --no-deps numpy==1.26.4
+
+REM ---- Sanity check: env should not contain gdk-pixbuf/poppler ----
+echo.
+echo Verifying env is clean of problem DLLs...
+call conda list | findstr /I "gdk-pixbuf poppler" >nul
+if !ERRORLEVEL! EQU 0 (
+    echo [WARN] gdk-pixbuf or poppler detected in main_env. Removing...
+    call conda remove -y --force gdk-pixbuf poppler 2>nul
+) else (
+    echo [OK]   No gdk-pixbuf/poppler in main_env.
+)
+echo.
 
 REM ---- Working folders ----
 if not exist "temp_uploads"   mkdir temp_uploads
@@ -118,10 +145,12 @@ call conda remove -y -n seed-vc --all >nul 2>&1
 call conda create -y -n seed-vc python=3.10
 call conda activate seed-vc
 
-REM Minimal conda installs (same fix as Part 1)
-call conda install -y -c conda-forge ffmpeg
-
+REM ---- Static ffmpeg (same fix as Part 1) ----
+echo Installing static ffmpeg (imageio-ffmpeg)...
 python -m pip install --upgrade pip setuptools wheel
+pip install imageio-ffmpeg
+for /f "delims=" %%i in ('python -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())"') do set "FFMPEG_EXE=%%i"
+copy /Y "!FFMPEG_EXE!" "%CONDA_PREFIX%\Scripts\ffmpeg.exe" >nul
 
 pip install numpy==1.26.4
 
@@ -135,6 +164,15 @@ pip install onnxruntime-gpu==1.18.1
 pip install gradio==5.23.0
 
 pip install --no-deps numpy==1.26.4
+
+REM ---- Sanity check ----
+call conda list | findstr /I "gdk-pixbuf poppler" >nul
+if !ERRORLEVEL! EQU 0 (
+    echo [WARN] gdk-pixbuf or poppler detected in seed-vc. Removing...
+    call conda remove -y --force gdk-pixbuf poppler 2>nul
+) else (
+    echo [OK]   No gdk-pixbuf/poppler in seed-vc.
+)
 
 if not exist "predefined_voices" (
     mkdir predefined_voices
@@ -179,18 +217,32 @@ call conda remove -y -n whisper --all >nul 2>&1
 call conda create -y -n whisper python=3.10
 call conda activate whisper
 
-call conda install -y -c conda-forge ffmpeg
-
+REM ---- Static ffmpeg (same fix as Part 1) ----
+echo Installing static ffmpeg (imageio-ffmpeg)...
 python -m pip install --upgrade pip setuptools wheel
+pip install imageio-ffmpeg
+for /f "delims=" %%i in ('python -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())"') do set "FFMPEG_EXE=%%i"
+copy /Y "!FFMPEG_EXE!" "%CONDA_PREFIX%\Scripts\ffmpeg.exe" >nul
 
 pip install numpy==1.26.4
 
+REM ---- PyTorch (matches main_env's CUDA 12.1 for driver consistency) ----
 pip install --no-cache-dir torch==2.2.2 torchvision==0.17.2 torchaudio==2.2.2 --index-url https://download.pytorch.org/whl/cu121
 
 pip install openai-whisper
 
 pip install --no-deps numpy==1.26.4
 
+REM ---- Sanity check ----
+call conda list | findstr /I "gdk-pixbuf poppler" >nul
+if !ERRORLEVEL! EQU 0 (
+    echo [WARN] gdk-pixbuf or poppler detected in whisper. Removing...
+    call conda remove -y --force gdk-pixbuf poppler 2>nul
+) else (
+    echo [OK]   No gdk-pixbuf/poppler in whisper.
+)
+
+REM ---- Pre-download Whisper "base" model ----
 echo Pre-downloading Whisper "base" model...
 echo try: > _warmup_whisper.py
 echo     import whisper >> _warmup_whisper.py
@@ -207,10 +259,13 @@ echo ===================================================
 echo   SETUP COMPLETE
 echo ===================================================
 echo.
-echo   Conda environments created:
-echo     - main_env   LivePortrait + Streamlit UI + evaluation
+echo   Conda envs created:
+echo     - main_env     LivePortrait + Streamlit UI + evaluation
 echo     - seed-vc      Voice transformation (subprocess from UI)
 echo     - whisper      Transcript dialogue score (subprocess from UI)
+echo.
+echo   ffmpeg.exe in each env: static binary from imageio-ffmpeg
+echo   (no glib / gdk-pixbuf / libintl dependencies)
 echo.
 echo   Models pre-downloaded:
 echo     - silero-vad           (main_env, ~2 MB)
@@ -224,8 +279,8 @@ echo     Voice-Transformation\predefined_voices\
 echo     Filenames:
 echo       male_high.wav   male_medium.wav   male_low.wav
 echo       female_high.wav female_medium.wav female_low.wav
-echo     See predefined_voices\README.txt for details.
 echo.
 echo   To start the app:  launch_gui.bat
+echo   (Make sure launch_gui.bat activates `main_env`, not `test_drive`.)
 echo ===================================================
 pause
